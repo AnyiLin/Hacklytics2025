@@ -23,38 +23,21 @@ lines = cv2.HoughLinesP(edges,
 line_image = image.copy()
 
 if lines is not None:
+    avg_angle = 0
+    left_most = None
+    right_most = None
     for line in lines:
-        print(line)
         x1, y1, x2, y2 = line[0]
+        if left_most is None or x1 < left_most[0]:
+            left_most = (x1, y1, x2, y2)
+        if right_most is None or x2 > right_most[2]:
+            right_most = (x1, y1, x2, y2)
         # Optionally, you can filter lines by their angle:
-        # angle = np.degrees(np.arctan2((y2 - y1), (x2 - x1)))
+        angle = np.degrees(np.arctan2((y2 - y1), (x2 - x1)))
         # For instance, you can ignore extremely steep or shallow lines if needed:
         # if not (abs(angle) < 10 or abs(angle) > 80):
         #     continue
         cv2.line(line_image, (x1, y1), (x2, y2), (0, 0, 255), 2) # Compute the direction vector of the line
-        dx = x2 - x1
-        dy = y2 - y1
-        
-        # Get a perpendicular vector: (-dy, dx) is perpendicular to (dx, dy)
-        perp_vector = np.array([-dy, dx])
-        
-        # Normalize the perpendicular vector to get a unit vector (optional)
-        if np.linalg.norm(perp_vector) != 0:
-            perp_unit = perp_vector / np.linalg.norm(perp_vector)
-        else:
-            perp_unit = perp_vector  # Return the zero vector if points are identical.
-        perp_unit *= 100
-        p_x1a = int(x1 - perp_unit[0])
-        p_y1a = int(y1 - perp_unit[1])
-        p_x1b = int(x1 + perp_unit[0])
-        p_y1b = int(y1 + perp_unit[1])
-        p_x2a = int(x2 - perp_unit[0])
-        p_y2a = int(y2 - perp_unit[1])
-        p_x2b = int(x2 + perp_unit[0])
-        p_y2b = int(y2 + perp_unit[1])
-        cv2.line(line_image, (p_x1a, p_y1a), (p_x1a, p_y1a), (0, 255, 0), 2)
-        cv2.line(line_image, (p_x2b, p_y2b), (p_x2b, p_y2b), (0, 255, 0), 2)
-cv2.line(line_image, (0,0), (width, height), (0, 255, 0), 2)
 
 
 # Display the original image, the edges, and the image with detected lines
