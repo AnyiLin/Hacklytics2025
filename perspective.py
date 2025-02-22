@@ -5,8 +5,8 @@ import math
 image = cv2.imread('frame.png', cv2.IMREAD_UNCHANGED)
 width = image.shape[1]
 height = image.shape[0]
-width = int(width / 3)
-height = int(height / 3)
+width = int(width / 2)
+height = int(height / 2)
 image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
 hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 gray_image = cv2.cvtColor(image, cv2.COLOR_BGRA2GRAY)
@@ -170,151 +170,47 @@ lines = true_lines
 # Create a copy of the original image to draw the detected lines
 line_image = image.copy()
 
-avg_angle = 0
+angles = []
 if lines is not None:
     for line in lines:
         x1, y1, x2, y2 = line
         # Optionally, you can filter lines by their angle:
         angle = np.degrees(np.arctan2((y2 - y1), (x2 - x1)))
-        avg_angle += angle
+        angles.append(angle)
         # For instance, you can ignore extremely steep or shallow lines if needed:
         # if not (abs(angle) < 10 or abs(angle) > 80):
         #     continue
         cv2.line(line_image, (x1, y1), (x2, y2), (0, 0, 255), 2) # Compute the direction vector of the line
-avg_angle /= len(lines)
-avg_angle = 90 - avg_angle
+
+med_angle = np.median(angles)
+avg_angle = 0
+angle_count = 0
+for i in angles:
+    if not abs(i - med_angle) > med_angle * 0.1:
+        print(i)
+        avg_angle += i
+        angle_count += 1
+avg_angle /= angle_count
+print(avg_angle)
+avg_angle = -(90 - avg_angle)
 print(avg_angle)
 
-def line_from_points(p1, p2):
-    """
-    Convert two points into a homogeneous line representation.
-    The line is given by: a*x + b*y + c = 0  as [a, b, c].
-    """
-    x1, y1 = p1
-    x2, y2 = p2
-    a = y1 - y2
-    b = x2 - x1
-    c = x1 * y2 - x2 * y1
-    return np.array([a, b, c], dtype=float)
+# Get image dimensions (height and width)
+(h, w) = image.shape[:2]
 
-def intersection_of_lines(L1, L2, eps=1e-6):
-    """
-    Compute the intersection of two lines in homogeneous form using the cross product.
-    Returns None if the lines are nearly parallel.
-    """
-    # Compute cross product:
-    X = np.cross(L1, L2)
-    if abs(X[2]) < eps:
-        # Lines are nearly parallel; no reliable intersection.
-        return None
-    # Convert to Cartesian coordinates:
-    x = X[0] / X[2]
-    y = X[1] / X[2]
-    return np.array([x, y])
+# Calculate the center of the image
+center = (w // 2, h // 2)
 
-def average_intersections(line_segments):
-    """
-    Given a list of line segments (each as (x1, y1, x2, y2)),
-    convert them to lines, compute pairwise intersections,
-    and return the average intersection point.
-    """
-    # Convert each segment into its homogeneous line representation.
-    lines = [line_from_points((seg[0], seg[1]), (seg[2], seg[3])) for seg in line_segments]
-    
-    intersections = []
-    n = len(lines)
-    for i in range(n):
-        for j in range(i + 1, n):
-            pt = intersection_of_lines(lines[i], lines[j])
-            if pt is not None:
-                intersections.append(pt)
-                
-    if intersections:
-        intersections = np.array(intersections)
-        avg_pt = np.mean(intersections, axis=0)
-        return avg_pt, intersections
-    else:
-        return None, None
-
-avg_intersection, all_inters = average_intersections(lines)
-def compute_rectifying_homography(theta, vx, vy, output_width):
-    """
-    Computes a homography that rectifies the perspective so that lines
-    that are tilted by angle 'theta' (in radians) and converge to vanishing
-    point (vx, vy) in the original image become vertical in the rectified image.
-    The output image has width 'output_width'; after transformation the vanishing
-    point is horizontally centered (at output_width/2) and sent to infinity.
-    
-    Parameters:
-      theta         - (float) The measured tilt of the lines (radians), where the 
-                      lines should be vertical but are rotated by theta.
-      vx, vy        - (float) The coordinates (in pixels) of the vanishing point in 
-                      the original image.
-      output_width  - (float) The desired width of the output image.
-    
-    Returns:
-      H             - (3x3 numpy array) The rectifying homography.
-    """
-    # 1. Rotation matrix R: rotate by -theta.
-    R = np.array([
-        [ np.cos(-theta), -np.sin(-theta), 0],
-        [ np.sin(-theta),  np.cos(-theta), 0],
-        [             0,              0,  1]
-    ], dtype=np.float32)
-    # Note: Alternatively, using trigonometric parity:
-    # R = np.array([[ np.cos(theta),  np.sin(theta), 0],
-    #               [-np.sin(theta),  np.cos(theta), 0],
-    #               [             0,              0,  1]], dtype=np.float32)
-    
-    # Apply R to the vanishing point (in homogeneous coordinates):
-    V = np.array([vx, vy, 1], dtype=np.float32).reshape(3, 1)
-    V_rot = R @ V  # V_rot = (vx_rot, vy_rot, 1)
-    vx_rot, vy_rot = V_rot[0, 0], V_rot[1, 0]
-    
-    # 2. Translation matrix T: move the rotated vanishing point horizontally so that its x == output_width/2.
-    T = np.array([
-        [1, 0, output_width/2 - vx_rot],
-        [0, 1, 0],
-        [0, 0, 1]
-    ], dtype=np.float32)
-    V_trans = T @ V_rot  # V_trans should be (output_width/2, vy_rot, 1)
-    
-    # 3. Projective transformation P: send the translated vanishing point to infinity.
-    # We choose P such that P*(output_width/2, vy_rot, 1)ᵀ = (output_width/2, vy_rot, 0)
-    # (Note: vy_rot should be nonzero. If vy_rot is negative because the VP is above the image,
-    #  that’s acceptable.)
-    if vy_rot == 0:
-        raise ValueError("After rotation the vanishing point's y-coordinate is zero.")
-    
-    P = np.array([
-        [1, 0, 0],
-        [0, 1, 0],
-        [0, -1/ vy_rot, 1]
-    ], dtype=np.float32)
-    
-    # Compose all transformations: H = P * T * R.
-    H = P @ T @ R
-    return H
-
-# --- Example Usage ---
-# Suppose your computed vanishing point is:
-vx, vy = avg_intersection[0], avg_intersection[1]   # for example; note vy is negative if it lies above the image.
-
-# Transform the image. Set the output size to cover the entire transformed content.
-# (You might first want to compute the warped positions of the image corners to determine output size.)
-output_size = (-width, -height)
-warped = cv2.warpPerspective(image, H, output_size,
-                              flags=cv2.INTER_LINEAR,
-                              borderMode=cv2.BORDER_CONSTANT,
-                              borderValue=(0, 0, 0))
-warped = cv2.resize(warped, (width, height), interpolation=cv2.INTER_AREA)
-
+# Generate the rotation matrix. The scale factor is set to 1.0 (no scaling)
+M = cv2.getRotationMatrix2D(center, avg_angle, 1.0)
+# Perform the rotation using warpAffine. The output image size is set as (w, h)
+rotated = cv2.warpAffine(image, M, (w, h))
 
 # Display the original image, the edges, and the image with detected lines
 cv2.imshow("Original Image", image)
 cv2.imshow("Edges", edges)
 cv2.imshow("Detected Lines", line_image)
 cv2.imshow("Blurred", blurred)
-cv2.imshow("Warped", warped)
+cv2.imshow("Rotated", rotated)
 cv2.waitKey(0)
 cv2.destroyAllWindows()
