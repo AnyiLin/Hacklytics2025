@@ -67,8 +67,8 @@ def is_white_or_green(roi):
     return False
 
 
-asdf = cv2.imread("green.png", cv2.IMREAD_UNCHANGED)
-print(is_white_or_green(asdf))
+# asdf = cv2.imread("green.png", cv2.IMREAD_UNCHANGED)
+# print(is_white_or_green(asdf))
 
 # Open the MP4 file
 cap = cv2.VideoCapture('Play 1.mp4')
