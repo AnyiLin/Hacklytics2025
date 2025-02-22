@@ -1,74 +1,67 @@
 import sys
 import os
 import gc
-sys.path.append(os.path.join(os.path.dirname(__file__), 'yolov7'))
-
-from transformers import DetrImageProcessor, DetrForObjectDetection
+from ultralytics import YOLO
 import torch
 from PIL import Image
 import cv2
-from yolov7.models.experimental import attempt_load
-from yolov7.utils.general import non_max_suppression, scale_coords
-from yolov7.utils.datasets import letterbox
 import numpy as np
 
-# Function to identify players using DETR
-def identify_players_detr(image, processor, model):
-    inputs = processor(images=image, return_tensors="pt")
-    outputs = model(**inputs)
+def preprocess_frame(frame):
+    # Convert to LAB color space for better light handling
+    lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    
+    # Apply CLAHE to L channel for better contrast in shadows and highlights
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    l = clahe.apply(l)
+    
+    # Merge channels back
+    lab = cv2.merge((l,a,b))
+    balanced = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+    
+    # Apply slight Gaussian blur to reduce glare
+    blurred = cv2.GaussianBlur(balanced, (3,3), 0)
+    
+    # Adjust gamma for better white jersey detection
+    gamma = 0.85  # Reduce intensity of bright areas
+    inv_gamma = 1.0 / gamma
+    table = np.array([((i / 255.0) ** inv_gamma) * 255
+                      for i in np.arange(0, 256)]).astype("uint8")
+    gamma_corrected = cv2.LUT(blurred, table)
+    
+    # Increase saturation slightly to help differentiate players from field
+    hsv = cv2.cvtColor(gamma_corrected, cv2.COLOR_BGR2HSV)
+    hsv[:,:,1] = cv2.multiply(hsv[:,:,1], 1.2)  # Increase saturation by 20%
+    final = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+    
+    return final
 
-    # Convert outputs (bounding boxes and class logits) to COCO API
-    target_sizes = torch.tensor([image.size[::-1]])
-    results = processor.post_process_object_detection(outputs, target_sizes=target_sizes, threshold=0.88)[0]
-
-    people = []
-    for score, label, box in zip(results["scores"], results["labels"], results["boxes"]):
-        box = [round(i, 2) for i in box.tolist()]
-        print(
-            f"DETR detected {model.config.id2label[label.item()]} with confidence "
-            f"{round(score.item(), 3)} at location {box}")
-        if model.config.id2label[label.item()] == 'person':
-            people.append(box)
-    return people
-
-# Function to identify players using YOLOv7
-def identify_players_yolov7(image, model, device):
-    with torch.no_grad():  # Disable gradient calculation
-        # Preprocess the image for YOLOv7
-        img = letterbox(image, new_shape=640)[0]  # Resize and pad the image
-        img = img[:, :, ::-1].transpose(2, 0, 1)  # Convert to CHW format
-        img = np.ascontiguousarray(img)
-
-        img = torch.from_numpy(img).to(device).float() / 255.0  # Normalize to [0, 1]
-        if img.ndimension() == 3:
-            img = img.unsqueeze(0)
-
-        # Perform inference
-        pred = model(img)[0]
-        pred = non_max_suppression(pred, 0.25, 0.45, classes=[0], agnostic=False)  # Class 0 is 'person'
-
+# Function to identify players using YOLOv10
+def identify_players_yolo(image, model, device):
+    # Preprocess the image
+    processed_image = preprocess_frame(image)
+    
+    with torch.no_grad():
+        results = model(processed_image)  # YOLOv10 inference
         people = []
-        for det in pred:  # detections per image
-            if len(det):
-                # Rescale boxes to original image size
-                det[:, :4] = scale_coords(img.shape[2:], det[:, :4], image.shape).round()
-                for *xyxy, conf, cls in det:
-                    people.append([int(xyxy[0]), int(xyxy[1]), int(xyxy[2]), int(xyxy[3])])
         
-        # Clear CUDA cache
-        if device.type == 'cuda':
+        for result in results:
+            boxes = result.boxes.data  # returns boxes object for bbox outputs
+            for box in boxes:
+                if box[5] == 0:  # class 0 is person
+                    x1, y1, x2, y2, conf, cls = box
+                    people.append([int(x1), int(y1), int(x2), int(y2)])
+        
+        if device == 'cuda':
             torch.cuda.empty_cache()
         
         return people
 
-# Load DETR model and processor
-processor = DetrImageProcessor.from_pretrained("facebook/detr-resnet-50", revision="no_timm")
-detr_model = DetrForObjectDetection.from_pretrained("facebook/detr-resnet-50", revision="no_timm")
-
-# Load YOLOv7 model
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-yolov7_model = attempt_load("yolov7.pt", map_location=device)
-yolov7_model.eval()
+# Load YOLOv10 model
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+yolo_model = YOLO('yolov10m.pt')  # or yolov10l.pt or yolov10x.pt
+yolo_model.to(device)
 
 # Process frames in batches
 BATCH_SIZE = 4
@@ -90,7 +83,13 @@ while True:
     
     # Process batch
     for frame in frames_buffer:
-        yolo_people = identify_players_yolov7(frame, yolov7_model, device)
+        # Process and detect
+        yolo_people = identify_players_yolo(frame, yolo_model, device)
+        
+        # For debugging: show preprocessed frame
+        processed = preprocess_frame(frame)
+        cv2.imshow("Preprocessed Frame", cv2.resize(processed, 
+                   (int(processed.shape[1]/2), int(processed.shape[0]/2))))
         
         # Draw boxes
         for box in yolo_people:
@@ -118,8 +117,6 @@ while True:
     
     # Force garbage collection
     gc.collect()
-    if device.type == 'cuda':
-        torch.cuda.empty_cache()
 
 cap.release()
 cv2.destroyAllWindows()
