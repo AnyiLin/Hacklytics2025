@@ -103,36 +103,50 @@ def process_lines(segments, angle_threshold=10, gap_threshold=20):
         
     return np.array(merged_segments, dtype=int)
 
+def find_lines(frame):
+    gray_image = cv2.cvtColor(frame, cv2.COLOR_BGRA2GRAY)
+
+    # Optimized line detection
+    blurred = cv2.GaussianBlur(gray_image, (5, 5), 0)
+    edges = cv2.Canny(blurred, 50, 150)
+    lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi/180, threshold=50, 
+                            minLineLength=100, maxLineGap=10)
+
+    # Process lines with minimal conversions
+    if lines is not None:
+        lines = process_lines(lines)
+        angles = np.degrees(np.arctan2(
+            lines[:, 3] - lines[:, 1],
+            lines[:, 2] - lines[:, 0]
+        ))
+        
+        med_angle = np.median(angles)
+        mask = abs(angles - med_angle) <= med_angle * 0.2
+        true_lines = lines[mask]
+        avg_angle = -(90 - np.mean(angles[mask]))
+        return true_lines, avg_angle
+
+        # # Draw lines efficiently
+        # line_image = image.copy()
+        # for line in true_lines:
+        #     cv2.line(line_image, (line[0], line[1]), (line[2], line[3]), (0, 0, 255), 2)
+
+        # cv2.imshow("Detected Lines", line_image)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
+    return None, None
+
+
 # Optimize image processing pipeline
 image = cv2.imread('frame.png', cv2.IMREAD_UNCHANGED)
 width, height = image.shape[1] // 2, image.shape[0] // 2  # Integer division
 image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
-gray_image = cv2.cvtColor(image, cv2.COLOR_BGRA2GRAY)
+true_lines, avg_angle = find_lines(image)
+# Draw lines efficiently
+line_image = image.copy()
+for line in true_lines:
+    cv2.line(line_image, (line[0], line[1]), (line[2], line[3]), (0, 0, 255), 2)
 
-# Optimized line detection
-blurred = cv2.GaussianBlur(gray_image, (5, 5), 0)
-edges = cv2.Canny(blurred, 50, 150)
-lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi/180, threshold=50, 
-                        minLineLength=100, maxLineGap=10)
-
-# Process lines with minimal conversions
-if lines is not None:
-    lines = process_lines(lines)
-    angles = np.degrees(np.arctan2(
-        lines[:, 3] - lines[:, 1],
-        lines[:, 2] - lines[:, 0]
-    ))
-    
-    med_angle = np.median(angles)
-    mask = abs(angles - med_angle) <= med_angle * 0.2
-    true_lines = lines[mask]
-    avg_angle = -(90 - np.mean(angles[mask]))
-
-    # Draw lines efficiently
-    line_image = image.copy()
-    for line in true_lines:
-        cv2.line(line_image, (line[0], line[1]), (line[2], line[3]), (0, 0, 255), 2)
-
-    cv2.imshow("Detected Lines", line_image)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+cv2.imshow("Detected Lines", line_image)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
