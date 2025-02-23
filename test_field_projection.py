@@ -199,22 +199,28 @@ while True:
     scaled_new_positions = []
     for i in new_positions:
         scaled_new_positions.append(transform_point(i, scale_factor, (translation_x, 0)))
+    for i in scaled_new_positions:
+        positions.append((i[0], i[1], counter))
+    counter += 1
 
     # # Display the warped image
     # for line in lines:
     #     x1, y1, x2, y2 = line  # Extract points from the nested array
     #     cv2.line(frame, (int(x1), int(y1)), (int(x2), int(y2)), (255, 0, 0), 2)
+    
     cv2.line(frame, (curr_line1_pts[0], curr_line1_pts[1]), (curr_line1_pts[2], curr_line1_pts[3]), (0, 255, 0), 2)
     cv2.line(frame, (curr_line2_pts[0], curr_line2_pts[1]), (curr_line2_pts[2], curr_line2_pts[3]), (255, 0, 0), 2)
     # Show current scale and translation on the image.
-    msg = "Scale: {:.2f}  Trans: ({:.1f})".format(scale_factor, translation_x)
-    cv2.putText(frame, msg, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
-    for i in scaled_new_positions:
-        positions.append((i[0], i[1], counter))
+    # msg = "Scale: {:.2f}  Trans: ({:.1f})".format(scale_factor, translation_x)
+    # cv2.putText(frame, msg, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
+    # for i in positions:
+    #     cv2.circle(frame, (int(i[0]), int(i[1])), 5, (0 + i[2] * 2, 0 + i[2] * 2, 255), -1)
+    # cv2.imshow("frame", frame)
+
+    
     for i in positions:
-        cv2.circle(frame, (int(i[0]), int(i[1])), 5, (0 + i[2] * 2, 0 + i[2] * 2, 255), -1)
-    counter += 1
-    cv2.imshow("frame", frame)
+        cv2.circle(first_frame, (int(i[0]), int(i[1])), 5, (0 + i[2] * 2, 0 + i[2] * 2, 255), -1)
+        cv2.imshow("first frame", first_frame)
     
     # Break loop on 'q' press
     if cv2.waitKey(1) & 0xFF == ord('q'):
