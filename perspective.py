@@ -180,20 +180,27 @@ if lines is not None:
         # For instance, you can ignore extremely steep or shallow lines if needed:
         # if not (abs(angle) < 10 or abs(angle) > 80):
         #     continue
-        cv2.line(line_image, (x1, y1), (x2, y2), (0, 0, 255), 2) # Compute the direction vector of the line
+        # cv2.line(line_image, (x1, y1), (x2, y2), (0, 0, 255), 2) # Compute the direction vector of the line
 
 med_angle = np.median(angles)
 avg_angle = 0
 angle_count = 0
-for i in angles:
-    if not abs(i - med_angle) > med_angle * 0.1:
-        print(i)
+true_lines = []
+for i in range(len(angles)):
+    if not abs(angles[i] - med_angle) > med_angle * 0.2:
+        true_lines.append(lines[i])
         avg_angle += i
         angle_count += 1
-avg_angle /= angle_count
-print(avg_angle)
+avg_angle /= angle
 avg_angle = -(90 - avg_angle)
-print(avg_angle)
+
+for line in true_lines:
+    x1, y1, x2, y2 = line
+    # For instance, you can ignore extremely steep or shallow lines if needed:
+    # if not (abs(angle) < 10 or abs(angle) > 80):
+    #     continue
+    cv2.line(line_image, (x1, y1), (x2, y2), (0, 0, 255), 2) # Compute the direction vector of the line
+
 
 # Get image dimensions (height and width)
 (h, w) = image.shape[:2]
