@@ -89,11 +89,6 @@ yolo_model.to(device)
 BATCH_SIZE = 4
 frames_buffer = []
 processed_frames = []
-first_frame = True
-gray0 = None
-prev_gray = None
-prev_pts = None
-lk_params = None
 
 cap = cv2.VideoCapture('Play 1.mp4')
 
@@ -104,41 +99,10 @@ while True:
         if not ret:
             break
         frames_buffer.append(frame)
-        if first_frame:
-            # TODO: process first frame keypoints
-            gray0 = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-            # Detect keypoints (using ORB in this example, but can use SIFT/SURF/AKAZE)
-            detector = cv2.ORB_create(nfeatures=1500)
-            keypoints0, descriptors0 = detector.detectAndCompute(gray0, None)
-
-            processed = preprocess_frame(frame)
-            
-            # Process and detect
-            yolo_people = identify_players_yolo(processed, yolo_model, device)
-            
-            # Draw boxes
-            for box in yolo_people:
-                x_min, y_min, x_max, y_max = map(int, box)
-
-            track_frame = frame
-            boxes = yolo_people
-
-            # Filter keypoints outside these regions.
-            filtered_keypoints = [kp for kp in keypoints0 if not is_within_quads(kp.pt, np.array(boxes))]
-            prev_pts = np.array([kp.pt for kp in filtered_keypoints], dtype=np.float32)
-            
-            # Parameters for Lucas-Kanade Optical Flow.
-            lk_params = dict(winSize  = (21, 21),
-                            maxLevel = 3,
-                            criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01))
-            first_frame = False
     
     if not frames_buffer:
         break
     
-    track_frame = None
-    boxes = None
     # Process batch
     for frame in frames_buffer:
         # For debugging: show preprocessed frame
@@ -160,45 +124,6 @@ while True:
         frame = cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA)
         processed_frames.append(frame)
 
-        track_frame = frame
-        boxes = yolo_people
-    
-    # TODO: process keyframe stuff
-    # prev_gray = gray0
-    curr_gray = cv2.cvtColor(track_frame, cv2.COLOR_BGR2GRAY)
-    
-    # Track keypoints.
-    next_pts = np.empty_like(prev_pts)
-    curr_pts, status, err = cv2.calcOpticalFlowPyrLK(prev_gray, curr_gray, prev_pts, next_pts, None, None, **lk_params)
-    
-    # Keep only successfully tracked points.
-    good_prev_pts = prev_pts[status.flatten() == 1]
-    good_curr_pts = curr_pts[status.flatten() == 1]
-    
-    # Optionally: Filter out tracking results that deviate too much from the median motion.
-    displacements = np.linalg.norm(good_curr_pts - good_prev_pts, axis=1)
-    median_disp = np.median(displacements)
-    disp_threshold = 3 * median_disp  # you might adjust the factor
-    valid_idx = np.where(displacements < disp_threshold)[0]
-    
-    filtered_prev_pts = good_prev_pts[valid_idx]
-    filtered_curr_pts = good_curr_pts[valid_idx]
-    
-    # Estimate the affine transformation (similarity transform)
-    transform, inliers = cv2.estimateAffinePartial2D(filtered_prev_pts, filtered_curr_pts,
-                                                     method=cv2.RANSAC, ransacReprojThreshold=3.0)
-    
-    if transform is not None:
-        # Extract scale and translation.
-        a, b = transform[0, 0], transform[0, 1]
-        scale = np.sqrt(a**2 + b**2)
-        tx, ty = transform[0, 2], transform[1, 2]
-        # Use these parameters to update your overlay lines accordingly.
-        print(f"Scale: {scale:.3f}, Translation: ({tx:.1f}, {ty:.1f})")
-    
-    # Update prev_gray and prev_pts for the next iteration.
-    prev_gray = curr_gray.copy()
-    prev_pts = filtered_curr_pts.reshape(-1, 2)
 
     # Display processed frames
     for frame in processed_frames:

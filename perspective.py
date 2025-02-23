@@ -10,7 +10,6 @@ height = int(height / 2)
 image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
 hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 gray_image = cv2.cvtColor(image, cv2.COLOR_BGRA2GRAY)
-
 blurred = cv2.GaussianBlur(gray_image, (5, 5), 0)
 edges = cv2.Canny(blurred, 50, 150)
 lines = cv2.HoughLinesP(edges, 
