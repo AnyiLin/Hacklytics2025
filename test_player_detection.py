@@ -89,6 +89,7 @@ yolo_model.to(device)
 BATCH_SIZE = 4
 frames_buffer = []
 processed_frames = []
+all_box_coords = []
 
 cap = cv2.VideoCapture('Play 1.mp4')
 
@@ -117,6 +118,9 @@ while True:
         for box in yolo_people:
             x_min, y_min, x_max, y_max = map(int, box)
             cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), color=(0, 255, 0), thickness=2)
+            all_box_coords.append([(x_min+x_max)/2, (y_min+y_max)/2])
+        for i in all_box_coords:
+            cv2.circle(frame, (int(i[0]), int(i[1])), 5, (0, 0, 255), -1)
         
         # Resize for display
         width = int(frame.shape[1] / 2)
@@ -128,6 +132,7 @@ while True:
     # Display processed frames
     for frame in processed_frames:
         cv2.imshow("Image with Bounding Boxes", frame)
+        cv2.waitKey(0)
         key = cv2.waitKey(1) & 0xFF
         if key == 27:  # ESC key
             cap.release()

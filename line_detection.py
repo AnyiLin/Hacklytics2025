@@ -103,6 +103,10 @@ def process_lines(segments, angle_threshold=10, gap_threshold=20):
         
     return np.array(merged_segments, dtype=int)
 
+def angle_from_vertical(angle):
+    angle = abs(angle)
+    return 90 - angle
+
 def find_lines(frame):
     gray_image = cv2.cvtColor(frame, cv2.COLOR_BGRA2GRAY)
 
@@ -119,34 +123,38 @@ def find_lines(frame):
             lines[:, 3] - lines[:, 1],
             lines[:, 2] - lines[:, 0]
         ))
-        
-        med_angle = np.median(angles)
-        mask = abs(angles - med_angle) <= med_angle * 0.2
-        true_lines = lines[mask]
-        avg_angle = -(90 - np.mean(angles[mask]))
-        return true_lines, avg_angle
+
+        true_lines = []
+        true_angles = []
+        for i in range(len(angles)):
+            if angle_from_vertical(angles[i]) < 45:
+                true_lines.append(lines[i])
+                true_angles.append(angles[i])
+        lines = np.array(true_lines)
+        angles = np.array(true_angles)
 
         # # Draw lines efficiently
-        # line_image = image.copy()
+        # line_image = frame.copy()
         # for line in true_lines:
         #     cv2.line(line_image, (line[0], line[1]), (line[2], line[3]), (0, 0, 255), 2)
 
         # cv2.imshow("Detected Lines", line_image)
         # cv2.waitKey(0)
         # cv2.destroyAllWindows()
+        return lines, angles
     return None, None
 
 
-# Optimize image processing pipeline
-image = cv2.imread('frame.png', cv2.IMREAD_UNCHANGED)
-width, height = image.shape[1] // 2, image.shape[0] // 2  # Integer division
-image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
-true_lines, avg_angle = find_lines(image)
-# Draw lines efficiently
-line_image = image.copy()
-for line in true_lines:
-    cv2.line(line_image, (line[0], line[1]), (line[2], line[3]), (0, 0, 255), 2)
+# # Optimize image processing pipeline
+# image = cv2.imread('frame.png', cv2.IMREAD_UNCHANGED)
+# width, height = image.shape[1] // 2, image.shape[0] // 2  # Integer division
+# image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
+# true_lines, avg_angle = find_lines(image)
+# # Draw lines efficiently
+# line_image = image.copy()
+# for line in true_lines:
+#     cv2.line(line_image, (line[0], line[1]), (line[2], line[3]), (0, 0, 255), 2)
 
-cv2.imshow("Detected Lines", line_image)
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+# cv2.imshow("Detected Lines", line_image)
+# cv2.waitKey(0)
+# cv2.destroyAllWindows()
