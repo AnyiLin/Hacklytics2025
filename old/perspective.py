@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import math
 
-image = cv2.imread('frame.png', cv2.IMREAD_UNCHANGED)
+image = cv2.imread("../images/play_2_map_first_frame.jpg", cv2.IMREAD_UNCHANGED)
 width = image.shape[1]
 height = image.shape[0]
 width = int(width / 2)
@@ -12,12 +12,11 @@ hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 gray_image = cv2.cvtColor(image, cv2.COLOR_BGRA2GRAY)
 blurred = cv2.GaussianBlur(gray_image, (5, 5), 0)
 edges = cv2.Canny(blurred, 50, 150)
-lines = cv2.HoughLinesP(edges, 
-                        rho=1, 
-                        theta=np.pi/180, 
-                        threshold=50, 
-                        minLineLength=100, 
-                        maxLineGap=10)
+lines = cv2.HoughLinesP(
+    edges, rho=1, theta=np.pi / 180, threshold=50, minLineLength=100, maxLineGap=10
+)
+
+
 def can_merge(seg1, seg2, angle_thresh_rad, gap_thresh):
     """
     Determine if seg1 and seg2 can be merged.
@@ -33,18 +32,18 @@ def can_merge(seg1, seg2, angle_thresh_rad, gap_thresh):
     p2 = np.array([seg1[2], seg1[3]], dtype=np.float32)
     p3 = np.array([seg2[0], seg2[1]], dtype=np.float32)
     p4 = np.array([seg2[2], seg2[3]], dtype=np.float32)
-    
+
     v1 = p2 - p1
     v2 = p4 - p3
     norm1 = np.linalg.norm(v1)
     norm2 = np.linalg.norm(v2)
     if norm1 == 0 or norm2 == 0:
         return False
-    
+
     # Compute the angles of the segments.
     angle1 = np.arctan2(v1[1], v1[0])
     angle2 = np.arctan2(v2[1], v2[0])
-    
+
     # Normalize the angular difference to [0, pi/2]
     diff_angle = np.abs(angle1 - angle2)
     diff_angle = min(diff_angle, np.pi - diff_angle)
@@ -58,15 +57,18 @@ def can_merge(seg1, seg2, angle_thresh_rad, gap_thresh):
     proj1 = np.dot(p1, d)
     proj2 = np.dot(p2, d)
     interval1 = [min(proj1, proj2), max(proj1, proj2)]
-    
+
     proj3 = np.dot(p3, d)
     proj4 = np.dot(p4, d)
     interval2 = [min(proj3, proj4), max(proj3, proj4)]
-    
+
     # Check if the projection intervals overlap (or nearly so).
-    if interval1[1] < interval2[0] - gap_thresh or interval2[1] < interval1[0] - gap_thresh:
+    if (
+        interval1[1] < interval2[0] - gap_thresh
+        or interval2[1] < interval1[0] - gap_thresh
+    ):
         return False
-    
+
     # Compute the perpendicular distances of seg2's endpoints to seg1's line.
     def perp_distance(pt, line_pt, d):
         vec = pt - line_pt
@@ -74,14 +76,15 @@ def can_merge(seg1, seg2, angle_thresh_rad, gap_thresh):
         proj_vec = proj_length * d
         diff = vec - proj_vec
         return np.linalg.norm(diff)
-    
+
     dist_p3 = perp_distance(p3, p1, d)
     dist_p4 = perp_distance(p4, p1, d)
-    
+
     if dist_p3 > gap_thresh or dist_p4 > gap_thresh:
         return False
 
     return True
+
 
 def merge_two_segments(seg1, seg2, d):
     """
@@ -92,7 +95,7 @@ def merge_two_segments(seg1, seg2, d):
     p2 = np.array([seg1[2], seg1[3]], dtype=np.float32)
     p3 = np.array([seg2[0], seg2[1]], dtype=np.float32)
     p4 = np.array([seg2[2], seg2[3]], dtype=np.float32)
-    
+
     pts = np.array([p1, p2, p3, p4])
     # Project points onto d.
     projections = pts.dot(d)
@@ -100,6 +103,7 @@ def merge_two_segments(seg1, seg2, d):
     max_idx = np.argmax(projections)
     new_seg = (pts[min_idx][0], pts[min_idx][1], pts[max_idx][0], pts[max_idx][1])
     return new_seg
+
 
 def merge_segments(segments, angle_threshold=10, gap_threshold=20):
     """
@@ -118,7 +122,7 @@ def merge_segments(segments, angle_threshold=10, gap_threshold=20):
         if len(segments.shape) == 3 and segments.shape[1] == 1:
             segments = segments.reshape(-1, 4)
         segments = [tuple(s.tolist()) for s in segments]
-    
+
     angle_thresh_rad = np.deg2rad(angle_threshold)
     merged_segments = segments[:]  # Make a copy
     changed = True
@@ -128,7 +132,7 @@ def merge_segments(segments, angle_threshold=10, gap_threshold=20):
         changed = False
         new_segments = []
         used = [False] * len(merged_segments)
-        
+
         for i in range(len(merged_segments)):
             if used[i]:
                 continue
@@ -141,7 +145,7 @@ def merge_segments(segments, angle_threshold=10, gap_threshold=20):
             if norm_v == 0:
                 continue
             d = v / norm_v
-            
+
             merged_seg = seg_i
 
             for j in range(i + 1, len(merged_segments)):
@@ -152,11 +156,12 @@ def merge_segments(segments, angle_threshold=10, gap_threshold=20):
                     merged_seg = merge_two_segments(merged_seg, seg_j, d)
                     used[j] = True
                     changed = True
-            
+
             new_segments.append(merged_seg)
             used[i] = True
         merged_segments = np.copy(new_segments)
     return merged_segments
+
 
 lines = merge_segments(lines)
 true_lines = []
@@ -198,7 +203,9 @@ for line in true_lines:
     # For instance, you can ignore extremely steep or shallow lines if needed:
     # if not (abs(angle) < 10 or abs(angle) > 80):
     #     continue
-    cv2.line(line_image, (x1, y1), (x2, y2), (0, 0, 255), 2) # Compute the direction vector of the line
+    cv2.line(
+        line_image, (x1, y1), (x2, y2), (0, 0, 255), 2
+    )  # Compute the direction vector of the line
 
 
 # Get image dimensions (height and width)

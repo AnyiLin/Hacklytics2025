@@ -31,19 +31,15 @@ while True:
     
     # Get the response from the API
     try:
-        # Make a request to the ChatGPT API
         response = client.chat.completions.create(
-            model="gpt-4o",  # Specify the model (e.g., gpt-3.5-turbo, gpt-4)
+            model="gpt-4o",
             messages=messages,
-            temperature=0.5,  # Adjust temperature for creativity (0.0 is deterministic, 1.0 is more creative)
+            temperature=0.5,
         )
     except Exception as e:
         print("Error during API call:", e)
         continue
 
-    # Extract and print the assistant's reply
     reply = response.choices[0].message.content
     print("Assistant:", reply)
-    
-    # Append the assistant's reply to the conversation history
     messages.append({"role": "assistant", "content": reply})
