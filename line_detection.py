@@ -9,17 +9,13 @@ def line_in_normal_form(x1, y1, x2, y2):
     if length == 0:
         return None
     
-    # Direction vector
-    # Rotate (dx, dy) by +90° to get a normal
     nx_unnorm = -dy
     ny_unnorm =  dx
     
-    # Normalize (nx, ny) to unit length
     denom = math.hypot(nx_unnorm, ny_unnorm)
     nx = nx_unnorm / denom
     ny = ny_unnorm / denom
     
-    # c is computed by plugging an endpoint (x1,y1) into n·p + c = 0 => c = -n·p
     c = -(nx * x1 + ny * y1)
     return (nx, ny, c)
 
