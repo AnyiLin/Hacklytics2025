@@ -1,7 +1,7 @@
 import cv2
 import sys
 import numpy as np
-from line_detection_copy import find_lines
+from line_detection import find_lines
 from yolo10_detection import player_detection
 
 # Load your image
