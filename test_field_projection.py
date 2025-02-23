@@ -3,15 +3,29 @@ import sys
 import numpy as np
 from line_detection import find_lines
 from yolo10_detection import player_detection
+
 def line_to_abd(x1, y1, x2, y2):
     """
-    Convert two endpoints into a line in the form A*x + B*y + C = 0.
-    It returns (A, B, C). Note: (A, B) is not necessarily normalized.
+    Convert endpoints to a normalized line equation (A*x + B*y + C = 0)
+    so that the (A, B) vector has unit norm.
     """
     A = y2 - y1
     B = x1 - x2
-    C = x2*y1 - x1*y2
-    return (A, B, C)
+    C = x2 * y1 - x1 * y2
+    norm = np.sqrt(A**2 + B**2) + 1e-8  # Avoid division by zero
+    return (A / norm, B / norm, C / norm)
+
+def compute_x_intercept(line_eq):
+    """
+    For a given line (A, B, C) representing A*x + B*y + C = 0,
+    compute the x-intercept as if the line were extended infinitely.
+    This is defined as the location where y=0.
+    """
+    A, B, C = line_eq
+    if abs(A) < 1e-8:
+        # For horizontal lines, the x-intercept is not defined.
+        return None
+    return -C / A
 
 def point_line_distance(line, point):
     """
@@ -41,32 +55,12 @@ def find_two_lines_closest_to_center(lines, center):
 
 def perpendicular_distance_between_parallel_lines(line1, line2):
     """
-    Compute the perpendicular distance between two (approximately parallel) lines.
-    Assumes that line1 and line2 are given as (A, B, C) in similar scale.
+    For two normalized line equations (A*x+B*y+C=0 where sqrt(A^2+B^2)=1),
+    the distance is simply the absolute difference in C.
     """
-    A, B, C1 = line1
+    _, _, C1 = line1
     _, _, C2 = line2
-    norm_factor = np.sqrt(A**2 + B**2)
-    return abs(C2 - C1) / (norm_factor + 1e-8)
-
-def compute_midpoint_of_lines(line1, line2, ref_point):
-    """
-    One simple approach to define a 'location' for a line is to compute the point on the
-    line that is closest to a reference point (for example, the image center).
-    Then, we can take the average of those two points as a midpoint.
-    """
-    def closest_point(line, pt):
-        A, B, C = line
-        x0, y0 = pt
-        # Compute the projection of pt onto the line:
-        t = (A*x0 + B*y0 + C) / (A**2+B**2+1e-8)
-        # The projected point (x', y') that lies on the line (using normal!)
-        x_proj = x0 - A*t
-        y_proj = y0 - B*t
-        return np.array([x_proj, y_proj])
-    p1 = closest_point(line1, ref_point)
-    p2 = closest_point(line2, ref_point)
-    return (p1 + p2) / 2
+    return abs(C2 - C1)
 
 def match_line(target_line, candidate_lines, tol_angle=30, tol_offset=60):
     """
@@ -98,6 +92,33 @@ def match_line(target_line, candidate_lines, tol_angle=30, tol_offset=60):
         return target_line
     return best_candidate
 
+def transform_point(current_point, scale, translation):
+    """
+    Maps a point from the current frame to the coordinates of the initial frame
+    using the given scaling factor and translational offset.
+    
+    Parameters:
+      current_point (tuple of float): The (x, y) coordinate in the current frame.
+      scale (float): The scaling factor, e.g. s = init_distance / curr_distance.
+      translation (tuple of float): The translation vector (t_x, t_y) that adjusts for panning.
+    
+    Returns:
+      tuple of float: The (x, y) coordinate in the initial frame.
+    
+    The transformation applies:
+      x_initial = scale * x_current + t_x
+      y_initial = scale * y_current + t_y
+    """
+    # Unpack current point and translation components
+    x_curr, y_curr = current_point
+    t_x, t_y = translation
+
+    # Compute the transformed coordinates
+    x_init = scale * x_curr + t_x
+    y_init = scale * y_curr + t_y
+
+    return (x_init, y_init)
+
 # Load your image
 cap = cv2.VideoCapture("Play 1.mp4")
 yolo = player_detection()
@@ -114,7 +135,7 @@ if not cap.isOpened():
 while True:
     ret, frame = cap.read()
     if on_first_frame:
-        first_frame = frame
+        first_frame = frame.copy()
     if not ret:
         break
     
@@ -134,8 +155,12 @@ while True:
 
         # Compute the initial distance between the two lines
         init_distance = perpendicular_distance_between_parallel_lines(line1_eq, line2_eq)
-        # Also compute a representative midpoint (using projection onto each line) for later panning measurement.
-        init_midpoint = compute_midpoint_of_lines(line1_eq, line2_eq, image_center)
+        # Compute the initial x-intercepts for each line (if one returns None, consider an alternative approach)
+        x_int1_init = compute_x_intercept(line1_eq)
+        x_int2_init = compute_x_intercept(line2_eq)
+        if x_int1_init is None or x_int2_init is None:
+            raise ValueError("One of the initial lines is horizontal; consider using y-intercept instead.")
+        init_x_intercept = (x_int1_init + x_int2_init) / 2
 
         # For later matching in every frame, store the original endpoints.
         ref_line1_pts = line1_pts.copy()
@@ -161,43 +186,45 @@ while True:
     else:
         scale_factor = 1.0
 
-    # Compute current midpoint (for panning)
-    curr_midpoint = compute_midpoint_of_lines(curr_line1_eq, curr_line2_eq, image_center)
-    # Translation (in pixel units) is the shift from current midpoint (after unscaling) to init_midpoint.
-    # (Depending on whether you want to map current to initial, you might perform: p_initial = scale*(p_current) + t)
-    translation = np.array(init_midpoint) - scale_factor * np.array(curr_midpoint)
-    # For visualization, draw the detected/matched lines
-    vis = frame.copy()
-    cv2.line(vis, (curr_line1_pts[0], curr_line1_pts[1]), (curr_line1_pts[2], curr_line1_pts[3]), (0, 255, 0), 2)
-    cv2.line(vis, (curr_line2_pts[0], curr_line2_pts[1]), (curr_line2_pts[2], curr_line2_pts[3]), (255, 0, 0), 2)
+     # Compute the current x-intercepts for each line and average them
+    x_int1_curr = compute_x_intercept(curr_line1_eq)
+    x_int2_curr = compute_x_intercept(curr_line2_eq)
+    if x_int1_curr is None or x_int2_curr is None:
+        continue  # Skip frame if one of the lines is horizontal
+    curr_x_intercept = (x_int1_curr + x_int2_curr) / 2
+
+    # Calculate horizontal translation adjusted by the scaling factor:
+    translation_x = init_x_intercept - scale_factor * curr_x_intercept
     
-    # Draw the midpoint
-    mid_pt_int = tuple(np.int32(curr_midpoint))
-    cv2.circle(vis, mid_pt_int, 5, (0, 0, 255), -1)
-    
-    # Show current scale and translation on the image.
-    msg = "Scale: {:.2f}  Trans: ({:.1f}, {:.1f})".format(scale_factor, translation[0], translation[1])
-    cv2.putText(vis, msg, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-    
-    cv2.imshow("Tracked Lines", vis)
-    
-    
-    # Display the warped image
-    for line in lines:
-        x1, y1, x2, y2 = line  # Extract points from the nested array
-        cv2.line(frame, (int(x1), int(y1)), (int(x2), int(y2)), (255, 0, 0), 2)
+    scaled_new_positions = []
     for i in new_positions:
+        scaled_new_positions.append(transform_point(i, scale_factor, (translation_x, 0)))
+
+    # # Display the warped image
+    # for line in lines:
+    #     x1, y1, x2, y2 = line  # Extract points from the nested array
+    #     cv2.line(frame, (int(x1), int(y1)), (int(x2), int(y2)), (255, 0, 0), 2)
+    cv2.line(frame, (curr_line1_pts[0], curr_line1_pts[1]), (curr_line1_pts[2], curr_line1_pts[3]), (0, 255, 0), 2)
+    cv2.line(frame, (curr_line2_pts[0], curr_line2_pts[1]), (curr_line2_pts[2], curr_line2_pts[3]), (255, 0, 0), 2)
+    # Show current scale and translation on the image.
+    msg = "Scale: {:.2f}  Trans: ({:.1f})".format(scale_factor, translation_x)
+    cv2.putText(frame, msg, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
+    for i in scaled_new_positions:
         positions.append((i[0], i[1], counter))
     for i in positions:
         cv2.circle(frame, (int(i[0]), int(i[1])), 5, (0 + i[2] * 2, 0 + i[2] * 2, 255), -1)
     counter += 1
     cv2.imshow("frame", frame)
     
-    cv2.waitKey(0)
-    key = cv2.waitKey(1) & 0xFF
-    if key == 27:  # ESC key
-        cap.release()
-        cv2.destroyAllWindows()
-        sys.exit()
+    # Break loop on 'q' press
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cv2.destroyAllWindows()
+for i in positions:
+    cv2.circle(first_frame, (int(i[0]), int(i[1])), 5, (0 + i[2] * 2, 0 + i[2] * 2, 255), -1)
+    cv2.imshow("first frame", first_frame)
+cv2.waitKey(0)
 cap.release()
 cv2.destroyAllWindows()
+sys.exit()
