@@ -2,8 +2,8 @@ import cv2
 import numpy as np
 
 # Load and convert image
-image = cv2.imread("field-hash.png")
-# image = cv2.imread("frame.png")
+# image = cv2.imread("field-hash.png")
+image = cv2.imread("frame.png")
 gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
 clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
